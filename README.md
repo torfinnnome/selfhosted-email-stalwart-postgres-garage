@@ -2,6 +2,8 @@
 
 This repository provides Docker Compose configurations for setting up a Stalwart email server using PostgreSQL for metadata storage and MinIO for blob storage. It includes configurations for both a primary and a backup site with replication enabled.
 
+*This is heavily inspired by https://gist.github.com/chripede/99b7eaa1101ee05cc64a59b46e4d299f - Thanks!* 
+
 ## Prerequisites
 
 *   Docker
@@ -134,7 +136,3 @@ A script (`scripts/container_backup.sh`) is provided for backing up the primary 
     10 3 * * * . /path/to/postgres-primary/scripts/backup.env; /path/to/postgres-primary/scripts/container_backup.sh >> /path/to/postgres-primary/backups/backup.log 2>&1
     ```
     Ensure the `container_backup.sh` script is executable (`chmod +x scripts/container_backup.sh`).
-
----
-*Heavily inspired by https://gist.github.com/chripede/99b7eaa1101ee05cc64a59b46e4d299f - Thanks!* 
-
