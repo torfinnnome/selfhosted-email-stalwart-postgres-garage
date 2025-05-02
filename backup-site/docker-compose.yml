@@ -1,0 +1,38 @@
+services:
+  postgres-standby:
+    image: postgres:${POSTGRES_VERSION} # MUST match the primary's major version
+    container_name: postgres-standby
+    restart: always
+    # DO NOT set POSTGRES_USER/PASSWORD/DB here initially.
+    # The data directory will be populated by pg_basebackup.
+    # We only need the replication password for the backup script.
+    environment:
+      PRIMARY_HOST: ${PRIMARY_HOST} # IP Address of Server A
+      REPLICATION_USER: ${REPLICATION_USER}
+      REPLICATION_PASSWORD: ${REPLICATION_PASSWORD} # Same as on primary
+      PGDATA: /var/lib/postgresql/data/pgdata # MUST match target dir in entrypoint
+    volumes:
+      - ./postgres/data:/var/lib/postgresql/data # Persist data
+      - ./postgres/scripts:/docker-entrypoint-initdb.d # Use initdb.d for the custom script
+    ports:
+      - "5434:5432"
+    # We override the default command to run our script first
+    command: ["/docker-entrypoint-initdb.d/setup_standby.sh"]
+  minio_target:
+    image: minio/minio:latest
+    container_name: minio_target
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000" # API Port
+      - "9001:9001" # Console Port
+    volumes:
+      - ./minio-data-target:/data # Persistent storage (different path/volume)
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 120s
+      timeout: 20s
+      retries: 3
+    restart: unless-stopped
