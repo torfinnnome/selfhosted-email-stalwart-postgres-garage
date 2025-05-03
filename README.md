@@ -28,6 +28,8 @@ POSTGRES_REPLICATION_USER=replicator
 POSTGRES_REPLICATION_PASSWORD=<your_replication_password>
 MINIO_ROOT_USER=<your_minio_user>
 MINIO_ROOT_PASSWORD=<your_minio_password>
+GRAFANA_ADMIN_USER=<your_grafana_admin_user>
+GRAFANA_ADMIN_PASSWORD=<your_grafana_password>
 ```
 
 **`backup-site/.env`:**
@@ -122,11 +124,11 @@ The `primary-site` configuration includes a monitoring stack based on Prometheus
 *   **Postgres Exporter:** Exports PostgreSQL database metrics to Prometheus.
 
 This stack allows you to monitor the health and performance of the host system, Docker containers, and the PostgreSQL database. You can import pre-built Grafana dashboards via the Grafana UI (`http://<primary_site_ip>:3000`) using their IDs or by uploading their JSON definitions. Recommended dashboards include:
-    *   **Node Exporter Full (ID: 1860):** Host system metrics.
-    *   **Docker and System Monitoring (ID: 193):** Container metrics (from cAdvisor).
-    *   **PostgreSQL Database (ID: 9628):** PostgreSQL metrics.
-    *   **MinIO Dashboard (ID: 13502):** MinIO server metrics.
-    *   **Stalwart Mail Server:** A dashboard is available [here](https://github.com/torfinnnome/grafana-dashboard-stalwart). *Note: Requires enabling the Prometheus metrics endpoint in Stalwart's configuration.*
+*   **Node Exporter Full (ID: 1860):** Host system metrics.
+*   **Docker and System Monitoring (ID: 193):** Container metrics (from cAdvisor).
+*   **PostgreSQL Database (ID: 9628):** PostgreSQL metrics.
+*   **MinIO Dashboard (ID: 13502):** MinIO server metrics.
+*   **Stalwart Mail Server:** A dashboard is available [here](https://github.com/torfinnnome/grafana-dashboard-stalwart). *Note: Requires enabling the Prometheus metrics endpoint in Stalwart's configuration.*
 
 ## PostgreSQL Backup (Primary Site)
 
