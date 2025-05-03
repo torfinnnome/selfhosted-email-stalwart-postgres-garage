@@ -1,14 +1,13 @@
 # Stalwart Email Server with PostgreSQL and MinIO
 
-This repository provides Docker Compose configurations for setting up a Stalwart email server using PostgreSQL for metadata storage and MinIO for blob storage. It includes configurations for both a primary and a backup site with replication enabled.
+This repository provides Docker Compose configurations for setting up a [Stalwart](https://stalw.art) email server using [PostgreSQL](https://www.postgresql.org) for metadata storage and [MinIO](https://min.io) for blob storage. It includes configurations for both a primary and a backup site with replication enabled.
 
-*This is heavily inspired by https://gist.github.com/chripede/99b7eaa1101ee05cc64a59b46e4d299f - Thanks!* 
+*This is heavily inspired by https://gist.github.com/chripede/99b7eaa1101ee05cc64a59b46e4d299f - Thanks! Please check it out on how to configure Stalwart to use a setup like this.* 
 
 ## Prerequisites
 
-*   Docker
-*   Docker Compose
-*   MinIO Client (`mc`) installed and configured
+*   Docker with [Docker Compose](https://github.com/docker/compose)
+*   [MinIO Client](https://min.io/docs/minio/linux/reference/minio-mc.html) (`mc`) installed and configured
 
 ## Setup Instructions
 
