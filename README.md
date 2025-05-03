@@ -45,13 +45,15 @@ MINIO_ROOT_PASSWORD=<your_minio_password>
 
 ### 2. Running the Services
 
-Navigate to the `primary-site` and `backup-site` directories respectively and start the services using Docker Compose:
+Navigate to the `primary-site` and `backup-site` directories respectively and start the services, on your primary- and backup-site using Docker Compose:
 
 ```bash
+# On primary site:
 cd primary-site
 docker-compose up -d
 
-cd ../backup-site
+# On backup site:
+cd backup-site
 docker-compose up -d
 ```
 
