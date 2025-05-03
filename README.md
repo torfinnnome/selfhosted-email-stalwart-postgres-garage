@@ -101,6 +101,9 @@ mc replicate add source/mydata \
 
 # Verify replication status
 mc replicate status source/mydata
+
+# If old items are not synced, force it:
+mc mirror source/mydata target/mydata
 ```
 
 *Note: Replace `TARGET_MINIO_ACCESS_KEY` and `TARGET_MINIO_SECRET_KEY` with the appropriate credentials for the target MinIO instance (likely the `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` from the backup site's `.env`).*
