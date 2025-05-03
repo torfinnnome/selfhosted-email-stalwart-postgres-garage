@@ -107,6 +107,26 @@ mc mirror source/mydata target/mydata
 
 *Note: Replace `TARGET_MINIO_ACCESS_KEY` and `TARGET_MINIO_SECRET_KEY` with the appropriate credentials for the target MinIO instance (likely the `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` from the backup site's `.env`).*
 
+## Monitoring (Primary Site)
+
+The `primary-site` configuration includes a monitoring stack based on Prometheus and Grafana:
+
+*   **Prometheus:** Collects metrics from various sources. Access the UI at `http://<primary_site_ip>:9090`.
+    *   Configuration: `primary-site/prometheus/prometheus.yml`
+*   **Grafana:** Visualizes the metrics collected by Prometheus. Access the UI at `http://<primary_site_ip>:3000`.
+    *   Default credentials (unless changed in `.env`): `admin` / `admin`
+    *   Provisioning: `primary-site/grafana/provisioning/`
+*   **Node Exporter:** Exports host system metrics (CPU, RAM, disk, network) to Prometheus.
+*   **cAdvisor:** Exports container metrics (resource usage per container) to Prometheus.
+*   **Postgres Exporter:** Exports PostgreSQL database metrics to Prometheus.
+
+This stack allows you to monitor the health and performance of the host system, Docker containers, and the PostgreSQL database. You can import pre-built Grafana dashboards via the Grafana UI (`http://<primary_site_ip>:3000`) using their IDs or by uploading their JSON definitions. Recommended dashboards include:
+    *   **Node Exporter Full (ID: 1860):** Host system metrics.
+    *   **Docker and System Monitoring (ID: 193):** Container metrics (from cAdvisor).
+    *   **PostgreSQL Database (ID: 9628):** PostgreSQL metrics.
+    *   **MinIO Dashboard (ID: 13502):** MinIO server metrics.
+    *   **Stalwart Mail Server:** A dashboard is available [here](https://github.com/torfinnnome/grafana-dashboard-stalwart). *Note: Requires enabling the Prometheus metrics endpoint in Stalwart's configuration.*
+
 ## PostgreSQL Backup (Primary Site)
 
 A script (`scripts/container_backup.sh`) is provided for backing up the primary PostgreSQL database.
