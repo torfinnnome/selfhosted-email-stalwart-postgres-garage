@@ -1,59 +1,75 @@
 services:
   stalwart-mail:
-    image: stalwartlabs/mail-server:latest
+    image: stalwart-fdb:latest
     volumes:
       - ./stalwart-mail:/opt/stalwart-mail
+      - ./fdb/fdb.cluster:/etc/foundationdb/fdb.cluster:ro
     restart: unless-stopped
     depends_on:
-      - db
+      - fdb
       - minio
     ports:
-      - 443:443
+      - 10443:443
       - 8080:8080
-      - 25:25
-      - 587:587
-      - 465:465
-      - 143:143
-      - 993:993
+      - 1025:25
+      - 10587:587
+      - 10465:465
+        #- 143:143
+      - 10993:993
       - 4190:4190
-      - 110:110
-      - 995:995
+        #- 110:110
+        #- 995:995
+      - 1179:1179/udp
 
-  db:
-    image: postgres:${POSTGRES_VERSION}
-    restart: unless-stopped
-    shm_size: 128mb
+  fdb:
+    image: foundationdb/foundationdb:${FDB_VERSION}
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
-      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+      FDB_COORDINATOR: ${FDB_COORDINATOR}
+      FDB_NETWORKING_MODE: ${FDB_NETWORKING_MODE}
+      FDB_COORDINATOR_PORT: ${FDB_COORDINATOR_PORT}
     volumes:
-      - ./postgres/data:/var/lib/postgresql/data
-      - ./postgres/conf:/etc/postgresql
-      - ./postgres/initdb:/docker-entrypoint-initdb.d
-    ports:
-      - 5432:5432
+      - ./fdb/data:/var/fdb/data
+      - ./fdb/logs:/var/fdb/logs
+      - ./fdb/fdb.cluster:/var/fdb/fdb.cluster
+    network_mode: "host"
+    entrypoint: /usr/bin/fdbserver
+    command:
+      - "--cluster_file=$FDB_CLUSTER_FILE"
+      - "--listen-address=$FDB_PUBLIC_IP:4500"
+      - "--public-address=$FDB_PUBLIC_IP:4500"
+      - "--datadir=/var/fdb/data"        # Must match volume mount target
+      - "--logdir=/var/fdb/logs"         # Must match volume mount target
+      - "--locality-zoneid=$FDB_HOST_HOSTNAME"
+      - "--locality-machineid=$FDB_HOST_HOSTNAME"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    restart: always
 
   minio:
-    image: quay.io/minio/minio:latest
-    restart: unless-stopped
+    image: minio/minio:${MINIO_RELEASE}
     volumes:
-      - ./minio:/data
-    ports:
-      - 9000:9000
-      - 9001:9001
+      - ./minio/data1:/data1
+      - ./minio/data2:/data2
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      MINIO_PROMETHEUS_AUTH_TYPE: public # Expose metrics endpoint without auth
-    command: server /data --console-address ":9001"
+      MINIO_PROMETHEUS_AUTH_TYPE: public
+    command: server --console-address ":9001" 
+      http://server1:9000/data1
+      http://server1:9000/data2
+      http://server2:9000/data1 
+      http://server2:9000/data2 
+      http://server3:9000/data1 
+      http://server3:9000/data2 
+    network_mode: host
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 120s
+      interval: 30s
       timeout: 20s
       retries: 3
+    restart: always
 
   prometheus:
     image: prom/prometheus:latest
@@ -72,7 +88,7 @@ services:
     depends_on:
       - node-exporter
       - cadvisor
-      - postgres-exporter
+      - fdb-exporter
 
   grafana:
     image: grafana/grafana-oss:latest
@@ -118,6 +134,8 @@ services:
       - /var/run:/var/run:rw
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
+    command:
+      - "--housekeeping_interval=30s"
     ports:
       # Use 8081 to avoid conflict with stalwart-mail's 8080 if exposed on host
       - 8081:8080
@@ -126,14 +144,26 @@ services:
     devices:
       - /dev/kmsg:/dev/kmsg
 
-  postgres-exporter:
-    image: quay.io/prometheuscommunity/postgres-exporter:latest
-    container_name: postgres-exporter
-    restart: unless-stopped
-    environment:
-      # Use the internal docker network hostname 'db'
-      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable
-    ports:
-      - 9187:9187
+  fdb-exporter:
+    image: clevercloud/fdbexporter:2.0.1-7.3.63
     depends_on:
-      - db
+      - fdb
+    restart: always
+    environment:
+      FDB_COORDINATOR: ${FDB_COORDINATOR}
+      FDB_NETWORKING_MODE: ${FDB_NETWORKING_MODE}
+      FDB_COORDINATOR_PORT: ${FDB_COORDINATOR_PORT}
+    env_file:
+      - .env
+    ports:
+      - 9188:9090
+
+  nginx:
+    image: nginx:stable-alpine
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Add volumes for SSL certs if using HTTPS
+      # - ./certs:/etc/nginx/certs:ro
+      - ./nginx/logs:/var/log/nginx # Mount logs (optional)
+    network_mode: host
+    restart: always
