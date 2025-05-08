@@ -1,291 +1,191 @@
-# Stalwart Email Server with FoundationDB and MinIO
+# Stalwart Email Server with PostgreSQL and MinIO
 
-This repository provides Docker Compose configurations for setting up a [Stalwart](https://stalw.art) email server using [FoundationDB](https://www.foundationdb.org/) for metadata storage and [MinIO](https://min.io) for blob storage.
+This repository provides Docker Compose configurations for setting up a [Stalwart](https://stalw.art) email server using [PostgreSQL](https://www.postgresql.org) for metadata storage and [MinIO](https://min.io) for blob storage. It includes configurations for both a primary and a backup site with replication enabled.
 
-*This is heavily inspired by https://gist.github.com/chripede/99b7eaa1101ee05cc64a59b46e4d299f - Thanks! Please check it out on how to configure Stalwart to use a setup like this.*
-
-The cluster configuration is deployed across four Virtual Machines (VMs), each situated in a distinct physical location. Inter-node communication is established via Tailscale. 
-
-The roles and services are distributed as follows:
-
-- Two front-end nodes: These nodes handle incoming requests, running Nginx, Stalwart, FoundationDB, and MinIO.
-- One back-end node: FoundationDB and MinIO.
-- One back-end node: FoundationDB
-
+*This is heavily inspired by https://gist.github.com/chripede/99b7eaa1101ee05cc64a59b46e4d299f - Thanks! Please check it out on how to configure Stalwart to use a setup like this.* 
 
 ## Prerequisites
 
-*   Docker with [Docker Compose](https://github.com/docker/compose) (or Podman)
+*   Docker with [Docker Compose](https://github.com/docker/compose)
 *   [MinIO Client](https://min.io/docs/minio/linux/reference/minio-mc.html) (`mc`) installed and configured
-*   `git` (for cloning the Stalwart repository)
 
 ## Setup Instructions
 
-This guide helps you set up Stalwart with clustered FoundationDB and MinIO.
+This setup involves two sites: a primary site and a backup site.
 
-### 1. Build Stalwart Docker Image with FoundationDB Support
+### 1. Environment Configuration
 
-The standard Stalwart Docker image may not include FoundationDB support by default, or you might need a specific version. This setup requires a Stalwart image built with FoundationDB capabilities, tagged as `stalwart-fdb:latest`.
+Create a `.env` file in both the `primary-site` and `backup-site` directories based on the examples below.
 
-a. Clone the official Stalwart Mail server repository (or your fork):
-```bash
-git clone https://github.com/stalwartlabs/stalwart-mail.git stalwart-mail-repo
-cd stalwart-mail-repo
-```
-
-b. Build the Docker image. The Dockerfile for FoundationDB support is in the subdirectory like `resources/docker/`. *Compare it with the file `stalwart-mail/build/Dockerfile` from this repo, as you want to add support for MinIO (and possibly other services) as well.*
-
-```bash
-# Build the image
-docker build -t stalwart-fdb:latest .
-
-# Navigate back to the root of the cloned repository or your project directory
-cd ../
-```
-Ensure the image `stalwart-fdb:latest` is successfully built and available locally before proceeding. The `docker-compose.yml` file in this repository refers to this image name.
-
-### 2. Environment Configuration
-
-Create a `.env` file in the root of this project directory. Below is an example template. Adjust the placeholder values (like `hostname.of.coordinator`, `this.public.ip`, `this.hostname`) to match your specific environment and server hostnames/IPs.
+**`primary-site/.env`:**
 
 ```env
-MINIO_RELEASE=RELEASE.2025-04-22T22-12-26Z
-MINIO_ROOT_USER=adminuser
-MINIO_ROOT_PASSWORD=verysecret
-GRAFANA_ADMIN_USER=adminuser
-GRAFANA_ADMIN_PASSWORD=alsoverysecret
-FDB_VERSION=7.3.62
-FDB_COORDINATOR=hostname.of.coordinator
-FDB_NETWORKING_MODE=container
-FDB_COORDINATOR_PORT=4500
-FDB_PUBLIC_IP=this.public.ip # The public IP of the host running FDB
-FDB_HOST_HOSTNAME=this.hostname # A unique hostname for this FDB node (e.g., server1)
-FDB_CLUSTER_FILE=/var/fdb/fdb.cluster
-FDB_ADDITIONAL_VERSIONS=""
+POSTGRES_VERSION=<your_postgres_version>
+POSTGRES_USER=stalwart
+POSTGRES_PASSWORD=<your_postgres_password>
+POSTGRES_DB=stalwart
+POSTGRES_REPLICATION_USER=replicator
+POSTGRES_REPLICATION_PASSWORD=<your_replication_password>
+MINIO_ROOT_USER=<your_minio_user>
+MINIO_ROOT_PASSWORD=<your_minio_password>
+GRAFANA_ADMIN_USER=<your_grafana_admin_user>
+GRAFANA_ADMIN_PASSWORD=<your_grafana_password>
 ```
 
-### 3. FoundationDB Cluster Setup
+**`backup-site/.env`:**
 
-The `fdb/fdb.cluster` file is crucial for FoundationDB clients (like Stalwart Mail) and servers to locate the cluster coordinators.
-The format of this file is `description:id@ip1:port1,ip2:port2,...`.
-*   `description:id`: A unique identifier for your cluster (e.g., `docker:docker` as used in the provided `fdb/fdb.cluster` file).
-*   `ipN:portN`: The IP addresses and ports of your FoundationDB coordinator processes.
+```env
+POSTGRES_VERSION=<your_postgres_version> # Must match primary site
+PRIMARY_HOST=<primary_site_ip_or_hostname>
+REPLICATION_USER=replicator
+REPLICATION_PASSWORD=<your_replication_password> # Must match primary site
+MINIO_ROOT_USER=<your_minio_user>
+MINIO_ROOT_PASSWORD=<your_minio_password>
+```
 
-In this setup:
-*   The `fdb/fdb.cluster` file is mounted into both the `stalwart-mail` and `fdb` service containers.
-*   The provided `fdb/fdb.cluster` file is:
-    ```
-    docker:docker@server1:4500,server2:4500,server3:4500,server4:4500
-    ```
-*   You **must** ensure that `server1`, `server2`, `server3`, `server4` are resolvable hostnames or IP addresses of your FoundationDB coordinator nodes, and that they are listening on port `4500` (or the port specified in `FDB_COORDINATOR_PORT` in your `.env` file). These hostnames should correspond to the `FDB_HOST_HOSTNAME` values for your FDB nodes if you are running multiple FDB instances.
-*   The `FDB_COORDINATOR` variable in your `.env` file should align with the information in your `fdb.cluster` file. The `fdb` service entrypoint uses `FDB_CLUSTER_FILE` which points to this file.
-*   **Important:** Review the coordinator list in `fdb/fdb.cluster`. Ensure this list accurately reflects your coordinator setup. Typically, you'd have an odd number of coordinators (e.g., 3 or 5) for resilience.
+### 2. Running the Services
 
-### 4. Nginx Reverse-Proxy Setup
+Navigate to the `primary-site` and `backup-site` directories respectively and start the services, on your primary- and backup-site using Docker Compose:
 
-The `nginx/nginx.conf` file configures Nginx to act as a reverse proxy for both Stalwart Mail services and the MinIO S3 API. This allows you to expose these services on standard ports and manage SSL/TLS termination centrally.
+```bash
+# On primary site:
+cd primary-site
+docker-compose up -d
 
-Key aspects of the configuration:
-*   **Stalwart Mail Services:**
-    *   Nginx listens on standard mail ports: `25` (SMTP), `993` (IMAPS), `465` (SMTPS), `587` (Submission), and `443` (HTTPS for Stalwart web interface/JMAP/etc.).
-    *   It uses `upstream` blocks (e.g., `backend_smtp`, `backend_imaps`) to define the Stalwart backend servers (e.g., `server1:1025`, `server2:1025`). These should point to your Stalwart instances. The current configuration assumes Stalwart is reachable via `server1` and `server2` on specific internal ports, which match the exposed ports in the `stalwart-mail` service in `docker-compose.yml`.
-    *   `proxy_protocol on;` is enabled for mail services. This sends client connection information (like the original IP address) to Stalwart. Ensure your Stalwart instances are configured to accept the proxy protocol.
-*   **MinIO S3 API:**
-    *   Nginx listens on port `81` for S3 traffic.
-    *   The `server_name s3.yourdomain;` directive should be updated to your desired domain for accessing MinIO.
-    *   It proxies requests to the `minio_backend` upstream, which includes `server1:9000`, `server2:9000`, and `server3:9000`. These should be the addresses of your MinIO server instances.
-    *   `client_max_body_size 5G;` allows for large file uploads. Adjust as needed.
-*   **General:**
-    *   The Nginx service in `docker-compose.yml` uses `network_mode: host`. Adjust as needed.
-    *   Ensure that `server1`, `server2`, `server3` in `nginx.conf` are resolvable to the correct IP addresses of your backend Stalwart and MinIO instances.
-    *   For production, configure SSL/TLS for the MinIO endpoint (port 81) and ensure mail service ports are secured with SSL/TLS certificates. The `nginx.conf` proxies HTTPS on port 443 to Stalwart.
+# On backup site:
+cd backup-site
+docker-compose up -d
+```
 
-To use this Nginx configuration:
-1.  Ensure `nginx/nginx.conf` reflects your server hostnames/IPs and desired domain names.
-2.  If using SSL/TLS, place your certificate and key files (e.g., in `./nginx/certs`), uncomment the certs volume in `docker-compose.yml`, and update `nginx.conf`.
+### 3. PostgreSQL Replication Setup (Primary Site)
 
-### 5. FoundationDB Setup
+On the primary site's PostgreSQL server, modify the `pg_hba.conf` file (typically located in the data directory, e.g., `primary-site/postgres/data/pg_hba.conf` after the first run) to allow the replication user from the backup site. Add the following line, adjusting the IP range as necessary:
 
-After the FoundationDB cluster is running, you need to configure its redundancy mode and storage engine. This is typically done once per cluster.
+```
+host    replication     replicator      <backup_site_ip>        scram-sha-256
+```
 
-1.  Connect to one of your FoundationDB nodes using `fdbcli`. If you are using the Docker Compose setup provided, you can do this by running the following command on the Docker host where an `fdb` service container is running:
-    ```bash
-    docker compose exec fdb fdbcli
-    ```
+### 4. MinIO Bucket Setup
 
-2.  Once inside the `fdbcli` prompt, configure the database. For a typical setup with SSDs, you would use:
-    ```
-    configure double ssd
-    ```
-    This command sets the redundancy mode to `double` (meaning data is replicated twice) and the storage engine to `ssd`. Adjust these settings based on your specific hardware and resilience requirements. Refer to the [FoundationDB documentation](https://apple.github.io/foundationdb/administration.html#configuring-the-database) for more details on available options.
-
-3.  You can verify the configuration by typing `status` in the `fdbcli`.
-
-### 6. MinIO Bucket Setup
-
-Ensure the MinIO service is running before proceeding. This setup assumes MinIO is accessible via hostnames like `server1`, `server2`, `server3` on port `9000`.
+Ensure the MinIO service is running on both primary and backup sites before proceeding.
 
 **a. Create Buckets:**
 
-Create the necessary bucket (e.g., `mydata`) on your MinIO instance (source). If you plan to use replication to another S3 target, create the bucket there as well. The target bucket *must* exist before setting up replication.
+Create the necessary bucket (e.g., `mydata`) on both the primary (source) and backup (target) MinIO instances. The target bucket *must* exist before setting up replication.
 
 ```bash
-# Replace placeholders with your actual values.
-# 'source' refers to the MinIO instance in this Docker Compose setup.
-# Use one of your MinIO server hostnames/IPs (e.g., server1, server2, or server3 from your setup).
-# The MINIO_ROOT_USER and MINIO_ROOT_PASSWORD are from your .env file.
-mc alias set source http://server1_ip_or_hostname:9000 MINIO_ROOT_USER MINIO_ROOT_PASSWORD --api s3v4
-
-# If replicating, 'target' refers to your backup/remote MinIO instance or S3-compatible service.
-# mc alias set target http://<remote_s3_ip_or_hostname>:<remote_s3_port> S3_ROOT_USER S3_ROOT_PASSWORD --api s3v4
+# Replace placeholders with your actual values
+mc alias set source http://PRIMARY_MINIO_IP:9000 MINIO_ROOT_USER MINIO_ROOT_PASSWORD --api s3v4
+mc alias set target http://BACKUP_MINIO_IP:9000 MINIO_ROOT_USER MINIO_ROOT_PASSWORD --api s3v4
 
 mc mb source/mydata
-# mc mb target/mydata # Only if replicating to a target you manage with 'mc'
+mc mb target/mydata
 ```
 
 **b. Enable Versioning:**
 
-Enable versioning on the source bucket, and on the target bucket if replicating.
+Enable versioning on both buckets.
 
 ```bash
 mc version enable source/mydata
-# mc version enable target/mydata # Only if replicating
+mc version enable target/mydata
 ```
 
-### 7. Monitoring
+### 5. MinIO Replication Setup
 
-This configuration includes a monitoring stack based on Prometheus and Grafana:
-
-*   **Prometheus:** Collects metrics from various exporters and services. Access the UI at `http://<your_host_ip>:9090`.
-    *   Configuration: `prometheus/etc/prometheus.yml`
-    *   Default Scrape Targets (as per `prometheus.yml`): Prometheus itself, Node Exporter, cAdvisor, MinIO (e.g., `server1:9000`), Stalwart Mail (`stalwart-mail:8080`), FoundationDB Exporter (e.g., `server1:9188`). Ensure these targets in `prometheus/etc/prometheus.yml` match your actual service hostnames/IPs and ports. The hostnames like `server1` should be resolvable by Prometheus.
-*   **Grafana:** Visualizes the metrics collected by Prometheus. Access the UI at `http://<your_host_ip>:3000`.
-    *   Default credentials (unless changed in `.env`): `admin` / `admin` (or `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` from `.env`)
-    *   Provisioning: `grafana/provisioning/`
-*   **Node Exporter:** Exports host system metrics (CPU, RAM, disk, network) to Prometheus.
-*   **cAdvisor:** Exports container metrics (resource usage per container) to Prometheus.
-*   **[fdbexporter](https://github.com/clevercloud/fdbexporter):** Exports FoundationDB metrics to Prometheus.
-
-This stack allows you to monitor the health and performance of the host system, Docker containers, FoundationDB, and MinIO. You can import pre-built Grafana dashboards via the Grafana UI (`http://<your_host_ip>:3000`) using their IDs or by uploading their JSON definitions. Recommended dashboards include:
-*   **Node Exporter Full (ID: 1860):** Host system metrics.
-*   **Docker and System Monitoring (ID: 193):** Container metrics (from cAdvisor).
-*   **MinIO Dashboard (ID: 13502):** MinIO server metrics.
-*   **Stalwart Mail Server:** A dashboard is available [here](https://github.com/torfinnnome/grafana-dashboard-stalwart). *Note: Requires enabling the Prometheus metrics endpoint in Stalwart's configuration.*
-*   **FoundationDB:** A dashboard is available [here](https://github.com/torfinnnome/grafana-dashboard-foundationdb).
-
-### 8. MinIO Replication Setup (optional)
-
-Configure replication from your local MinIO instance (source) to a backup/target MinIO instance or S3-compatible service.
+Configure replication from the primary (source) to the backup (target) MinIO instance.
 
 ```bash
 # Replace placeholders with your actual values
 mc replicate add source/mydata \
-  --remote-bucket "arn:aws:s3:::mydata" \ # Example ARN for target bucket, adjust for your S3 provider
-  --storage-class STANDARD \ # Optional: specify storage class on target
-  --endpoint "http://SOME_OTHER_S3:9000" \ # Endpoint of the target S3 service
-  --access-key "TARGET_S3_ACCESS_KEY" \
-  --secret-key "TARGET_S3_SECRET_KEY" \
+  --remote-bucket http://TARGET_MINIO_ACCESS_KEY:TARGET_MINIO_SECRET_KEY@BACKUP_MINIO_IP:9000/mydata \
   --replicate "delete,delete-marker,existing-objects" \
   --priority 1
 
 # Verify replication status
-mc replicate status source/mydata --data
+mc replicate status source/mydata
 
-# If old items are not synced and you want to mirror them (use with caution):
-# mc mirror --overwrite source/mydata target/mydata
+# If old items are not synced, force it:
+mc mirror source/mydata target/mydata
 ```
 
-*Note: The `mc replicate add` command structure can vary based on the S3 provider. The example above uses parameters common for MinIO-to-MinIO or MinIO-to-S3 replication. Replace placeholders with your actual values for the target S3 instance. The `--remote-bucket` often requires an ARN or specific format. Consult MinIO and your target S3 provider's documentation.*
+*Note: Replace `TARGET_MINIO_ACCESS_KEY` and `TARGET_MINIO_SECRET_KEY` with the appropriate credentials for the target MinIO instance (likely the `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` from the backup site's `.env`).*
 
+## Monitoring (Primary Site)
 
-### 9. Running the Services
+The `primary-site` configuration includes a monitoring stack based on Prometheus and Grafana:
 
-Navigate to the root of this project directory and start all services using Docker (or Podman) Compose:
+*   **Prometheus:** Collects metrics from various exporters and services defined in its configuration file. Access the UI at `http://<primary_site_ip>:9090`.
+    *   Configuration: `primary-site/prometheus/etc/prometheus.yml`
+    *   Default Scrape Targets (as per `prometheus.yml`): Prometheus itself, Node Exporter, cAdvisor, Postgres Exporter, MinIO, Stalwart Mail.
+*   **Grafana:** Visualizes the metrics collected by Prometheus. Access the UI at `http://<primary_site_ip>:3000`.
+    *   Default credentials (unless changed in `.env`): `admin` / `admin`
+    *   Provisioning: `primary-site/grafana/provisioning/`
+*   **Node Exporter:** Exports host system metrics (CPU, RAM, disk, network) to Prometheus.
+*   **cAdvisor:** Exports container metrics (resource usage per container) to Prometheus.
+*   **Postgres Exporter:** Exports PostgreSQL database metrics to Prometheus.
 
-```bash
-docker-compose up -d
-```
+This stack allows you to monitor the health and performance of the host system, Docker containers, and the PostgreSQL database. You can import pre-built Grafana dashboards via the Grafana UI (`http://<primary_site_ip>:3000`) using their IDs or by uploading their JSON definitions. Recommended dashboards include:
+*   **Node Exporter Full (ID: 1860):** Host system metrics.
+*   **Docker and System Monitoring (ID: 193):** Container metrics (from cAdvisor).
+*   **PostgreSQL Database (ID: 9628):** PostgreSQL metrics.
+*   **MinIO Dashboard (ID: 13502):** MinIO server metrics.
+*   **Stalwart Mail Server:** A dashboard is available [here](https://github.com/torfinnnome/grafana-dashboard-stalwart). *Note: Requires enabling the Prometheus metrics endpoint in Stalwart's configuration.*
 
-## Backup Procedures
+## PostgreSQL Backup (Primary Site)
 
-This setup includes scripts to back up your FoundationDB data, MinIO bucket contents, and MinIO system configurations. These scripts are located in the `backup/` directory. It's crucial to schedule these scripts to run regularly, for example, using `cron`.
+A script (`primary-site/backup/postgres_backup_local.sh`) is provided for backing up the primary PostgreSQL database locally on the host machine where the primary site's Docker containers are running. This script uses `docker exec` to run `pg_dump` inside the container.
 
-**Important Considerations Before Scheduling:**
-*   **Script Paths:** Ensure the paths to the scripts in your crontab entries are correct. The examples below assume your project root is `/path/to/your/project`. Adjust this accordingly.
-*   **Permissions:** The scripts must be executable (`chmod +x backup/*.sh`).
-*   **Environment:** Cron jobs run with a minimal environment. If scripts rely on environment variables not set in the script itself (e.g., for `docker compose`), you might need to source a profile file or set them directly in the crontab. The provided scripts are designed to be relatively self-contained or use `docker compose exec` which handles the container environment.
-*   **`mc` Alias Configuration:**
-    *   The `minio_backup_local.sh` and `minio-system_backup_local.sh` scripts rely on an `mc` alias (defaulting to `source`). This alias must be configured on the machine where the cron job runs, pointing to your MinIO server.
-    *   For `minio-system_backup_local.sh`, the `mc` alias **must be configured with MinIO admin credentials** (root user/password or an access key with admin privileges).
-    *   Example `mc` alias setup:
-        ```bash
-        # For regular bucket access (used by minio_backup_local.sh)
-        mc alias set source http://your-minio-server-ip:9000 YOUR_ACCESS_KEY YOUR_SECRET_KEY --api s3v4
-        # For admin access (required by minio-system_backup_local.sh - use root credentials)
-        mc alias set source http://your-minio-server-ip:9000 MINIO_ROOT_USER MINIO_ROOT_PASSWORD --api s3v4
-        ```
-        Ensure the `source` alias used by the scripts matches the one you've configured with the appropriate permissions.
-*   **Log Files:** The scripts generate log files. Monitor these logs for successful execution or errors. The default log locations are specified within each script.
-*   **Backup Storage:** Ensure the `LOCAL_BACKUP_DIR` (for `minio_backup_local.sh`), `BACKUP_DESTINATION_URL` (implicitly for `fdb_backup_local.sh` via its configuration), and `BACKUP_BASE_DIR` (for `minio-system_backup_local.sh`) have sufficient free space.
+### Setup
 
-### 1. FoundationDB Backup (`backup/fdb_backup_local.sh`)
+1.  **Configure Environment Variables:**
+    The backup script (`postgres_backup_local.sh`) requires several environment variables to be set:
+    *   `CONTAINER_NAME`: The name of the PostgreSQL Docker container (e.g., `db` or the full name generated by compose).
+    *   `PGUSER`: PostgreSQL user (e.g., `stalwart`).
+    *   `PGDATABASE`: PostgreSQL database name (e.g., `stalwart`).
+    *   `PGPASSWORD`: PostgreSQL user's password. **Must be set for `docker exec`**.
+    *   `BACKUP_DIR`: The absolute path on the *host machine* where backup files should be stored.
+    *   `KEEP_DAYS`, `KEEP_WEEKS`, `KEEP_MONTHS` (Optional): For retention policy.
 
-This script initiates a backup of your FoundationDB cluster. It starts the `backup_agent` if not already running and then triggers a backup.
+    You can set these variables in the environment where the script runs (e.g., in a cron job definition) or by creating a `.env` file (e.g., `primary-site/backup/.env`) and sourcing it before running the script.
 
-*   **Configuration:** Review and adjust variables at the top of `backup/fdb_backup_local.sh` (e.g., `FDB_SERVICE_NAME`, `CLUSTER_FILE_PATH`, `BACKUP_DESTINATION_URL`). The `BACKUP_DESTINATION_URL` is critical as it tells FDB where to store the backup files (e.g., `file:///backup` which corresponds to the `./fdb/backup` volume mount in `docker-compose.yml`).
-*   **Execution:**
+    **Example `primary-site/backup/.env`:**
+    ```env
+    # Required for postgres_backup_local.sh
+    CONTAINER_NAME=primary-site-db-1 # Adjust to your actual container name
+    PGUSER=stalwart
+    PGDATABASE=stalwart
+    PGPASSWORD=<your_postgres_password> # The password from primary-site/.env
+    BACKUP_DIR=/path/on/host/for/postgres-backups # Host path where backups should be stored
+
+    # Optional Retention
+    # KEEP_DAYS=7
+    # KEEP_WEEKS=4
+    # KEEP_MONTHS=12
+    ```
+    *Note: Ensure the `BACKUP_DIR` exists and has appropriate write permissions for the user running the script.*
+
+2.  **Configure Passwordless Access (Optional but Recommended):**
+    PGDATABASE=stalwart
+    *Note: The `postgres_backup_local.sh` script uses `docker exec` and passes `PGPASSWORD` as an environment variable directly to the `docker exec` command. Therefore, `.pgpass` inside the container or on the host is *not* used by this specific script for the `pg_dump` execution itself.*
+
+3.  **Schedule Cron Job:**
+    Edit the crontab (`crontab -e`) on the host machine and add a line similar to the following, adjusting paths and environment variable handling as needed:
+
+    **Option A: Sourcing a `.env` file:**
+    ```crontab
+    # Example: Run backup daily at 3:10 AM, sourcing variables from backup/.env
+    10 3 * * * set -a; source /full/path/to/primary-site/backup/.env; set +a; /full/path/to/primary-site/backup/postgres_backup_local.sh >> /full/path/to/primary-site/backup/postgres_backup.log 2>&1
+    ```
+
+    **Option B: Setting variables directly in crontab:**
+    ```crontab
+    # Example: Run backup daily at 3:10 AM, setting variables directly
+    10 3 * * * PGPASSWORD='<your_pg_password>' CONTAINER_NAME='primary-site-db-1' PGUSER='stalwart' PGDATABASE='stalwart' BACKUP_DIR='/path/on/host/for/postgres-backups' /full/path/to/primary-site/backup/postgres_backup_local.sh >> /full/path/to/primary-site/backup/postgres_backup.log 2>&1
+    ```
+    *(Remember to replace placeholders like `<your_pg_password>` and paths)*
+
+    Ensure the `postgres_backup_local.sh` script is executable:
     ```bash
-    cd /path/to/your/project
-    ./backup/fdb_backup_local.sh
+    chmod +x /full/path/to/primary-site/backup/postgres_backup_local.sh
     ```
-*   **Crontab Example (daily at 2 AM):**
-    ```cron
-    0 2 * * * /path/to/your/project/backup/fdb_backup_local.sh >> /path/to/your/project/backup/fdb_backup_cron.log 2>&1
-    ```
-
-### 2. MinIO Bucket Backup (`backup/minio_backup_local.sh`)
-
-This script uses `mc mirror` to back up a specified MinIO bucket to a local directory.
-
-*   **Configuration:**
-    *   Edit `backup/minio_backup_local.sh` and set:
-        *   `MINIO_ALIAS`: The `mc` alias for your source MinIO server (default: `source`).
-        *   `BUCKET_NAME`: The name of the bucket to back up (default: `stalwart`).
-        *   `LOCAL_BACKUP_DIR`: The absolute path to your local backup destination.
-        *   `MC_BIN`: Path to your `mc` binary if not in standard PATH for the cron user.
-    *   Ensure the `mc` alias is configured correctly on the host running the script.
-*   **Execution:**
-    ```bash
-    cd /path/to/your/project # Not strictly necessary if script uses absolute paths, but good practice
-    ./backup/minio_backup_local.sh
-    ```
-*   **Crontab Example (daily at 3 AM):**
-    ```cron
-    0 3 * * * /path/to/your/project/backup/minio_backup_local.sh >> /path/to/your/project/backup/minio_bucket_backup_cron.log 2>&1
-    ```
-
-### 3. MinIO System Configuration Backup (`backup/minio-system_backup_local.sh`)
-
-This script exports MinIO's IAM configuration (users, groups, policies) and bucket policies. **It requires the `mc` alias to be configured with admin credentials.**
-
-*   **Configuration:**
-    *   Edit `backup/minio-system_backup_local.sh` and set:
-        *   `MINIO_ALIAS`: The `mc` alias for your source MinIO server (default: `source`). **Must have admin privileges.**
-        *   `BACKUP_BASE_DIR`: The absolute path where backup archives will be stored.
-    *   Ensure `jq` is installed on the system running the script.
-*   **Execution:**
-    ```bash
-    cd /path/to/your/project # Not strictly necessary
-    ./backup/minio-system_backup_local.sh
-    ```
-*   **Crontab Example (weekly, Sunday at 4 AM):**
-    ```cron
-    0 4 * * 0 /path/to/your/project/backup/minio-system_backup_local.sh >> /path/to/your/project/backup/minio_system_backup_cron.log 2>&1
-    ```
-    *Note: IAM and system configurations typically change less frequently than bucket data, so a weekly backup might be sufficient, but adjust to your needs.*
-
----
-
-## Todo
-
-- Instructions for SSL/TLS certificate setup for MinIO.
