@@ -206,8 +206,86 @@ Navigate to the root of this project directory and start all services using Dock
 docker-compose up -d
 ```
 
+## Backup Procedures
+
+This setup includes scripts to back up your FoundationDB data, MinIO bucket contents, and MinIO system configurations. These scripts are located in the `backup/` directory. It's crucial to schedule these scripts to run regularly, for example, using `cron`.
+
+**Important Considerations Before Scheduling:**
+*   **Script Paths:** Ensure the paths to the scripts in your crontab entries are correct. The examples below assume your project root is `/path/to/your/project`. Adjust this accordingly.
+*   **Permissions:** The scripts must be executable (`chmod +x backup/*.sh`).
+*   **Environment:** Cron jobs run with a minimal environment. If scripts rely on environment variables not set in the script itself (e.g., for `docker compose`), you might need to source a profile file or set them directly in the crontab. The provided scripts are designed to be relatively self-contained or use `docker compose exec` which handles the container environment.
+*   **`mc` Alias Configuration:**
+    *   The `minio_backup_local.sh` and `minio-system_backup_local.sh` scripts rely on an `mc` alias (defaulting to `source`). This alias must be configured on the machine where the cron job runs, pointing to your MinIO server.
+    *   For `minio-system_backup_local.sh`, the `mc` alias **must be configured with MinIO admin credentials** (root user/password or an access key with admin privileges).
+    *   Example `mc` alias setup:
+        ```bash
+        # For regular bucket access (used by minio_backup_local.sh)
+        mc alias set source http://your-minio-server-ip:9000 YOUR_ACCESS_KEY YOUR_SECRET_KEY --api s3v4
+        # For admin access (required by minio-system_backup_local.sh - use root credentials)
+        mc alias set source http://your-minio-server-ip:9000 MINIO_ROOT_USER MINIO_ROOT_PASSWORD --api s3v4
+        ```
+        Ensure the `source` alias used by the scripts matches the one you've configured with the appropriate permissions.
+*   **Log Files:** The scripts generate log files. Monitor these logs for successful execution or errors. The default log locations are specified within each script.
+*   **Backup Storage:** Ensure the `LOCAL_BACKUP_DIR` (for `minio_backup_local.sh`), `BACKUP_DESTINATION_URL` (implicitly for `fdb_backup_local.sh` via its configuration), and `BACKUP_BASE_DIR` (for `minio-system_backup_local.sh`) have sufficient free space.
+
+### 1. FoundationDB Backup (`backup/fdb_backup_local.sh`)
+
+This script initiates a backup of your FoundationDB cluster. It starts the `backup_agent` if not already running and then triggers a backup.
+
+*   **Configuration:** Review and adjust variables at the top of `backup/fdb_backup_local.sh` (e.g., `FDB_SERVICE_NAME`, `CLUSTER_FILE_PATH`, `BACKUP_DESTINATION_URL`). The `BACKUP_DESTINATION_URL` is critical as it tells FDB where to store the backup files (e.g., `file:///backup` which corresponds to the `./fdb/backup` volume mount in `docker-compose.yml`).
+*   **Execution:**
+    ```bash
+    cd /path/to/your/project
+    ./backup/fdb_backup_local.sh
+    ```
+*   **Crontab Example (daily at 2 AM):**
+    ```cron
+    0 2 * * * /path/to/your/project/backup/fdb_backup_local.sh >> /path/to/your/project/backup/fdb_backup_cron.log 2>&1
+    ```
+
+### 2. MinIO Bucket Backup (`backup/minio_backup_local.sh`)
+
+This script uses `mc mirror` to back up a specified MinIO bucket to a local directory.
+
+*   **Configuration:**
+    *   Edit `backup/minio_backup_local.sh` and set:
+        *   `MINIO_ALIAS`: The `mc` alias for your source MinIO server (default: `source`).
+        *   `BUCKET_NAME`: The name of the bucket to back up (default: `stalwart`).
+        *   `LOCAL_BACKUP_DIR`: The absolute path to your local backup destination.
+        *   `MC_BIN`: Path to your `mc` binary if not in standard PATH for the cron user.
+    *   Ensure the `mc` alias is configured correctly on the host running the script.
+*   **Execution:**
+    ```bash
+    cd /path/to/your/project # Not strictly necessary if script uses absolute paths, but good practice
+    ./backup/minio_backup_local.sh
+    ```
+*   **Crontab Example (daily at 3 AM):**
+    ```cron
+    0 3 * * * /path/to/your/project/backup/minio_backup_local.sh >> /path/to/your/project/backup/minio_bucket_backup_cron.log 2>&1
+    ```
+
+### 3. MinIO System Configuration Backup (`backup/minio-system_backup_local.sh`)
+
+This script exports MinIO's IAM configuration (users, groups, policies) and bucket policies. **It requires the `mc` alias to be configured with admin credentials.**
+
+*   **Configuration:**
+    *   Edit `backup/minio-system_backup_local.sh` and set:
+        *   `MINIO_ALIAS`: The `mc` alias for your source MinIO server (default: `source`). **Must have admin privileges.**
+        *   `BACKUP_BASE_DIR`: The absolute path where backup archives will be stored.
+    *   Ensure `jq` is installed on the system running the script.
+*   **Execution:**
+    ```bash
+    cd /path/to/your/project # Not strictly necessary
+    ./backup/minio-system_backup_local.sh
+    ```
+*   **Crontab Example (weekly, Sunday at 4 AM):**
+    ```cron
+    0 4 * * 0 /path/to/your/project/backup/minio-system_backup_local.sh >> /path/to/your/project/backup/minio_system_backup_cron.log 2>&1
+    ```
+    *Note: IAM and system configurations typically change less frequently than bucket data, so a weekly backup might be sufficient, but adjust to your needs.*
+
+---
 
 ## Todo
 
-- Detailed guide on FoundationDB backup and restore procedures.
 - Instructions for SSL/TLS certificate setup for MinIO.
