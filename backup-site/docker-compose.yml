@@ -19,7 +19,7 @@ services:
     # We override the default command to run our script first
     command: ["/docker-entrypoint-initdb.d/setup_standby.sh"]
   minio_target:
-    image: minio/minio:latest
+    image: minio/minio:${MINIO_RELEASE}
     container_name: minio_target
     command: server /data --console-address ":9001"
     ports:

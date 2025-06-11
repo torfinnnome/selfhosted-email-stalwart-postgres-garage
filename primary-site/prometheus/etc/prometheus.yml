@@ -28,8 +28,11 @@ scrape_configs:
       # Use the internal docker network hostname 'minio' and its API port 9000
       - targets: ['minio:9000']
 
-  - job_name: 'stalwart-mail'
+  - job_name: 'stalwart'
     metrics_path: /metrics/prometheus
     scheme: http
     static_configs:
       - targets: ['stalwart-mail:8080']
+    basic_auth:
+      username: 'METRIC_USER'
+      password: 'METRIC_PASSWORD'

@@ -20,16 +20,22 @@ Create a `.env` file in both the `primary-site` and `backup-site` directories ba
 **`primary-site/.env`:**
 
 ```env
+STALWART_VERSION=<your_stalwart_version>
 POSTGRES_VERSION=<your_postgres_version>
 POSTGRES_USER=stalwart
 POSTGRES_PASSWORD=<your_postgres_password>
 POSTGRES_DB=stalwart
 POSTGRES_REPLICATION_USER=replicator
 POSTGRES_REPLICATION_PASSWORD=<your_replication_password>
+MINIO_RELEASE=<your_minio_version>
 MINIO_ROOT_USER=<your_minio_user>
 MINIO_ROOT_PASSWORD=<your_minio_password>
 GRAFANA_ADMIN_USER=<your_grafana_admin_user>
 GRAFANA_ADMIN_PASSWORD=<your_grafana_password>
+GRAFANA_SMTP_ENABLED=true
+GRAFANA_SMTP_HOST=<smtp-server:25>
+GRAFANA_SMTP_EHLO_IDENTITY=<ehlo_host>
+GRAFANA_SMTP_FROM_ADDRESS=<from_address>
 ```
 
 **`backup-site/.env`:**
@@ -39,6 +45,7 @@ POSTGRES_VERSION=<your_postgres_version> # Must match primary site
 PRIMARY_HOST=<primary_site_ip_or_hostname>
 REPLICATION_USER=replicator
 REPLICATION_PASSWORD=<your_replication_password> # Must match primary site
+MINIO_RELEASE=<your_minio_version>
 MINIO_ROOT_USER=<your_minio_user>
 MINIO_ROOT_PASSWORD=<your_minio_password>
 ```
