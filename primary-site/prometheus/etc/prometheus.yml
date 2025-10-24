@@ -21,12 +21,11 @@ scrape_configs:
       # Use the internal docker network hostname 'postgres-exporter'
       - targets: ['postgres-exporter:9187']
 
-  - job_name: 'minio'
-    metrics_path: /minio/v2/metrics/cluster # Standard MinIO metrics path
-    scheme: http # Assuming no TLS within the docker network
+  - job_name: 'garage'
+    metrics_path: /metrics
+    scheme: http
     static_configs:
-      # Use the internal docker network hostname 'minio' and its API port 9000
-      - targets: ['minio:9000']
+      - targets: ['garage:3903']
 
   - job_name: 'stalwart'
     metrics_path: /metrics/prometheus

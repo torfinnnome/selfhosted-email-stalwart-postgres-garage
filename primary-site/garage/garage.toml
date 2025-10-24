@@ -1,0 +1,16 @@
+
+
+data_dir = "/var/lib/garage/data"
+meta_dir = "/var/lib/garage/meta"
+
+[s3_api]
+api_addr = "[::]:9000"
+root_domain = "garage.localhost"
+
+[s3_web]
+web_addr = "[::]:9001"
+root_domain = "garage.localhost"
+index = "index.html"
+
+[admin]
+api_bind_addr = "[::]:3903"
